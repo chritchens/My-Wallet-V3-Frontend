@@ -56,44 +56,40 @@ function BuySellCtrl ($rootScope, $scope, $state, Alerts, Wallet, currency, buyS
       $scope.status.loading = true;
       $scope.exchange = buySell.getExchange();
 
-      buySell.fetchProfile().then(() => {
+      buySell.fetchProfile().then(() => $q.all([
+        buySell.getTrades().catch((error) => $q.reject({ error, type: 'trades' })),
+        buySell.getKYCs().catch((error) => $q.reject({ error, type: 'kyc' })),
+        buySell.getExchange().getBuyCurrencies().then(currency.updateCoinifyCurrencies)
+      ])).then(() => {
+        $scope.status.loading = false;
+        $scope.status.disabled = false;
+      }).catch((error) => {
+        $scope.status.exchangeDown = true;
+        if (error && error.type) {
+          $scope.fetchTradeError = error.type === 'trades';
+          $scope.fetchKYCError = error.type === 'kyc';
+        }
+      }).finally(() => {
         $scope.getMaxMin();
 
-        let getCurrencies = buySell.getExchange().getBuyCurrencies().then(currency.updateCoinifyCurrencies);
+        let pending = buySell.trades.pending;
+        $scope.pendingTrade = pending.sort((a, b) => b.id - a.id)[0];
 
-        let getTrades = buySell.getTrades().then(() => {
-          let pending = buySell.trades.pending;
-          $scope.pendingTrade = pending.sort((a, b) => b.id - a.id)[0];
-        }).catch(() => {
-          $scope.fetchTradeError = true;
-        });
-
-        let getKYCs = buySell.getKYCs().then(() => {
-          $scope.kyc = buySell.kycs[0];
-          if ($scope.exchange) {
-            if (+$scope.exchange.profile.level.name < 2) {
-              if ($scope.kyc) {
-                buySell.pollKYC();
-              } else {
-                buySell.getKYCs().then(kycs => {
-                  if (kycs.length > 0) buySell.pollKYC();
-                  $scope.kyc = kycs[0];
-                });
-              }
+        $scope.kyc = buySell.kycs[0];
+        if ($scope.exchange) {
+          if (+$scope.exchange.profile.level.name < 2) {
+            if ($scope.kyc) {
+              buySell.pollKYC();
+            } else {
+              buySell.getKYCs().then(kycs => {
+                if (kycs.length > 0) buySell.pollKYC();
+                $scope.kyc = kycs[0];
+              });
             }
-          } else {
-            $scope.$watch(buySell.getExchange, (ex) => $scope.exchange = ex);
           }
-        }).catch(() => {
-          $scope.fetchKYCError = true;
-        });
-
-        $q.all([getTrades, getKYCs, getCurrencies]).then(() => {
-          $scope.status.loading = false;
-          $scope.status.disabled = false;
-        }).catch(() => {
-          $scope.status.exchangeDown = true;
-        });
+        } else {
+          $scope.$watch(buySell.getExchange, (ex) => $scope.exchange = ex);
+        }
       });
     } else {
       $scope.status.disabled = false;
